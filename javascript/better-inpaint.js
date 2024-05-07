@@ -1,4 +1,4 @@
-(() => {
+(async () => {
     const BETTER_INPAINT_POLLING_TIMEOUT = 500;
 
 
@@ -82,17 +82,25 @@
     class BetterInpaintElement extends HTMLElement {
         constructor() {
             super();
+            this.handleWheel = this.handleWheel.bind(this);
         }
         
         connectedCallback() {
+            this.container = document.createElement("div");
+            this.appendChild(this.container);
+            this.container.style.height = "800px";
+            this.container.addEventListener("wheel", this.handleWheel);
             console.log("[sd-webui-better-inpaint] Root component created");
-            this.div = document.createElement("div");
-            this.appendChild(this.div);
-            this.div.innerHTML = "Hello world!";
         }
 
         disconnectedCallback() {
-            
+            if(this.container) {
+                this.container.removeEventListener("wheel", this.handleWheel);
+            }
+        }
+
+        handleWheel(event) {
+            event.preventDefault();
         }
     }
 
