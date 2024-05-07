@@ -1,6 +1,5 @@
 import launch
 import pkg_resources
-import platform
 
 
 minimum_sdwi2iextender_version = "0.1.3"
