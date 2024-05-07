@@ -1,0 +1,5 @@
+from lib_better_inpaint.globals import BetterInpaintGlobals
+from lib_better_inpaint.webui_callbacks import setup_script_callbacks
+
+
+setup_script_callbacks(BetterInpaintGlobals.is_extension_enabled)
