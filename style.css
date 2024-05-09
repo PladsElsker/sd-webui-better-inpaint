@@ -1,3 +1,5 @@
 .better-inpaint-hidden {
-    display: none !important;
+    position: absolute;
+    overflow: hidden;
+    height: 0;
 }

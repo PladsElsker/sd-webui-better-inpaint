@@ -10,6 +10,7 @@ class BetterInpaintTab(OperationMode):
         self.inpaint_img_component = gr.Image(visible=True, label="Cropped image", interactive=False, type="pil", elem_id="img2img_better_inpaint_image")
         self.inpaint_img_component.unrender()
         self.inpaint_mask_component = gr.Image(visible=True, label="Cropped mask", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask")
+        self.inpaint_mask_component.unrender()
         return self.inpaint_img_component, self.inpaint_mask_component
 
     def tab(self):
@@ -17,6 +18,7 @@ class BetterInpaintTab(OperationMode):
             self.update_all = gr.Button(value="", visible=False, elem_id="img2img_better_inpaint_update_all")
             with gr.Row():
                 self.inpaint_img_component.render()
+                self.inpaint_mask_component.render()
                 self.inpaint_img_upload = gr.Image(label="Image", source="upload", interactive=True, type="pil", elem_id="img2img_better_inpaint_image_upload")
                 self.inpaint_mask_upload = gr.Image(visible=True, label="Mask", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask_upload")
             
@@ -40,7 +42,7 @@ class BetterInpaintTab(OperationMode):
         self.update_all.click(
             fn=None,
             inputs=[],
-            outputs=[self.inpaint_mask_upload, self.inpaint_img_component, self.inpaint_mask_component],
+            outputs=[self.inpaint_img_component, self.inpaint_mask_upload],
             _js="better_inpaint_update_all"
         )
         self.inpaint_mask_upload.change(
