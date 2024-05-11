@@ -32,21 +32,16 @@ let better_inpaint_update_all;
 
 
     function getElementsToHide() {
-        try {
-            return [
-                document.querySelector("#img2img_inpaint_full_res").parentElement.parentElement.parentElement,
-                // document.querySelector("#img2img_better_inpaint_image").parentElement,
-            ];
-        }
-        catch {
-            return [null];
-        }
+        return [
+            document.querySelector("#img2img_inpaint_full_res").parentElement.parentElement.parentElement,
+            document.querySelector("#img2img_better_inpaint_mask").parentElement,
+        ];
     }
 
 
     function setupBetterInpaintRoot(root, elementsToHide) {
-        populateRoot(root);
         hideRedundantComponents(root, elementsToHide);
+        populateRoot(root);
     }
 
     
@@ -62,7 +57,7 @@ let better_inpaint_update_all;
                 if (mutation.type === "attributes" && mutation.attributeName === "style") {
                     const display = window.getComputedStyle(mutation.target).display;
                     elementsToHide.forEach(nodeToHide => {
-                        if(display == "block") {
+                        if(display === "block") {
                             nodeToHide.classList.add("better-inpaint-hidden");
                         }
                         else {
@@ -73,7 +68,7 @@ let better_inpaint_update_all;
             }
         };
         const observer = new MutationObserver(callback);
-        const targetNode = root.parentElement.parentElement;
+        const targetNode = root.parentElement.parentElement.parentElement;
         const config = { attributes: true, attributeFilter: ["style"] };
         observer.observe(targetNode, config);
     }
@@ -86,46 +81,46 @@ let better_inpaint_update_all;
         }
         
         connectedCallback() {
+            if(this.container) return;
+
+            this.parentRow = document.querySelector("#img2img_better_inpaint_root").parentElement;
+            this.parentRow.classList.add("better-inpaint-hidden");
+
+            document.querySelector("#img2img_better_inpaint_image_upload > div[data-testid='block-label']").remove();
+
             this.container = document.createElement("div");
             this.appendChild(this.container);
+            this.container.style.cursor = "default";
+            this.container.style.userSelect = "none";
             this.container.style.position = "relative";
             this.container.style.overflow = "hidden";
             this.container.style.height = "800px";
+            this.container.style.left = "0%";
             this.container.addEventListener("wheel", this.handleWheel);
 
             this.viewport = new ViewportElement();
             this.container.appendChild(this.viewport);
             this.viewport.style.width = "100%";
             this.viewport.style.height = "100%";
+            this.viewport.style.left = "0%";
             this.viewport.style.position = "absolute";
+            new ResizeObserver(this.resizeSelectionRect.bind(this)).observe(this.container);
+            
+            this.selectionToolSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%" fill="currentColor"><path d="M200-360h480v-320H200v320Zm-40 200q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z"/></svg>`;
+            this.drawToolSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%" fill="currentColor"><path d="M240-120q-45 0-89-22t-71-58q26 0 53-20.5t27-59.5q0-50 35-85t85-35q50 0 85 35t35 85q0 66-47 113t-113 47Zm0-80q33 0 56.5-23.5T320-280q0-17-11.5-28.5T280-320q-17 0-28.5 11.5T240-280q0 23-5.5 42T220-202q5 2 10 2h10Zm230-160L360-470l358-358q11-11 27.5-11.5T774-828l54 54q12 12 12 28t-12 28L470-360Zm-190 80Z"/></svg>`;
 
             this.image_upload_observer = watch_gradio_image("#img2img_better_inpaint_image_upload", src => {
                 const image = this.viewport.image.image;
-                const maskCanvas = this.viewport.mask.maskCanvas;
-                const selection = this.viewport.selection;
-
                 image.src = src;
-                const updateFunction = () => {
-                    maskCanvas.width = image.naturalWidth;
-                    maskCanvas.height = image.naturalHeight;
-                    const containerClientRect = this.container.getBoundingClientRect();
-                    selection.style.height = `${100 * ((image.naturalHeight / image.naturalWidth) * containerClientRect.width) / containerClientRect.height}%`;
-                    compute_cropped_images();
-                };
-                image.onload = updateFunction;
-                if(src === "") updateFunction();
+                image.onload = this.imageUploadChanged.bind(this);
+                if(src === "") this.imageUploadChanged();
             });
 
             console.log("[sd-webui-better-inpaint] Root component created");
         }
 
         disconnectedCallback() {
-            if(this.container) {
-                this.container.removeEventListener("wheel", this.handleWheel);
-            }
-            if(this.image_upload_observer) {
-                this.image_upload_observer.disconnect();
-            }
+
         }
 
         handleWheel(event) {
@@ -151,6 +146,73 @@ let better_inpaint_update_all;
                 this.viewport.offset[1] + cursorOffsetY * (1 - actualScaleApplied),
             ]
         }
+
+        imageUploadChanged() {
+            const image = this.viewport.image.image;
+            const maskCanvas = this.viewport.mask.maskCanvas;
+
+            if(image.naturalWidth === 0 || image.naturalHeight === 0) this.imageDeleted();
+            else this.imageUploaded();
+            
+            maskCanvas.width = image.naturalWidth;
+            maskCanvas.height = image.naturalHeight;
+            this.resizeSelectionRect();
+            compute_cropped_images();
+        }
+
+        imageUploaded() {
+            const imageUploadComponent = document.querySelector("#img2img_better_inpaint_image_upload");
+            const innerImage = imageUploadComponent.querySelector("div[data-testid='image'] > div > img");
+            const annoyingPenButton = imageUploadComponent.querySelector("div[data-testid='image'] > div > div > button");
+            innerImage.parentElement.insertBefore(this.parentRow, innerImage);
+            innerImage.classList.add("better-inpaint-hidden");
+            const customButtonTemplate = annoyingPenButton.cloneNode(true);
+            annoyingPenButton.classList.add("better-inpaint-hidden");
+            this.parentRow.classList.remove("better-inpaint-hidden");
+            this.addCustomToolButtons(customButtonTemplate, annoyingPenButton.parentElement);
+        }
+
+        imageDeleted() {
+            this.parentRow.classList.add("better-inpaint-hidden");
+        }
+
+        addCustomToolButtons(customButtonTemplate, buttonsRoot) {
+            const selectionButton = customButtonTemplate.cloneNode(true);
+            const drawButton = customButtonTemplate.cloneNode(true);
+
+            buttonsRoot.addEventListener("wheel", event => this.handleWheel(event));
+
+            selectionButton.querySelector("div").innerHTML = this.selectionToolSvg;
+            drawButton.querySelector("div").innerHTML = this.drawToolSvg;
+            selectionButton.setAttribute("title", "Context window");
+            drawButton.setAttribute("title", "Draw");
+            buttonsRoot.insertBefore(drawButton, buttonsRoot.children[0]);
+            buttonsRoot.insertBefore(selectionButton, buttonsRoot.children[0]);
+
+            const SELECTED = "#2c84e8";
+            const DESELECTED = "";
+            selectionButton.style.borderColor = SELECTED;
+            selectionButton.addEventListener("click", () => {
+                selectionButton.style.borderColor = SELECTED;
+                drawButton.style.borderColor = DESELECTED;
+                this.viewport.selection.style.zIndex = 1;
+                this.viewport.mask.style.zIndex = 0;
+            });
+            drawButton.addEventListener("click", () => {
+                selectionButton.style.borderColor = DESELECTED;
+                drawButton.style.borderColor = SELECTED;
+                this.viewport.selection.style.zIndex = 0;
+                this.viewport.mask.style.zIndex = 1;
+            });
+        }
+
+        resizeSelectionRect() {
+            const image = this.viewport.image.image;
+            const selection = this.viewport.selection;
+            const containerClientRect = this.container.getBoundingClientRect();
+
+            selection.style.height = `${100 * ((image.naturalHeight / image.naturalWidth) * containerClientRect.width) / containerClientRect.height}%`;
+        }
     }
 
 
@@ -162,20 +224,25 @@ let better_inpaint_update_all;
         }
         
         connectedCallback() {
+            if(this.image) return;
+
             this.image = new ViewportImageElement();
             this.appendChild(this.image);
             this.image.style.position = "absolute";
             this.image.style.width = "100%";
+            this.image.style.left = "0%";
 
             this.mask = new ViewportMaskElement();
             this.appendChild(this.mask);
             this.mask.style.position = "absolute";
             this.mask.style.width = "100%";
+            this.mask.style.left = "0%";
 
             this.selection = new SelectionRectangleElement(this.image);
             this.appendChild(this.selection);
             this.selection.style.position = "absolute";
             this.selection.style.width = "100%";
+            this.selection.style.left = "0%";
         }
 
         disconnectedCallback() {
@@ -190,6 +257,7 @@ let better_inpaint_update_all;
             if(value > 2000) return;
             if(value < 20) return;
 
+            const parentClientRect = this.parentElement.getBoundingClientRect();
             this._scale = value;
             this.style.width = `${value}%`;
             this.style.height = `${value}%`;
@@ -218,9 +286,12 @@ let better_inpaint_update_all;
         }
 
         connectedCallback() {
+            if(this.image) return;
+
             this.image = document.createElement("img");
             this.appendChild(this.image);
             this.image.setAttribute("data-type", "full");
+            this.image.style.userSelect = "none";
             this.image.style.position = "absolute";
             this.image.style.width = "100%";
 
@@ -242,8 +313,11 @@ let better_inpaint_update_all;
         }
 
         connectedCallback() {
+            if(this.maskCanvas) return;
+
             this.maskCanvas = document.createElement("canvas");
             this.appendChild(this.maskCanvas);
+            this.maskCanvas.style.userSelect = "none";
             this.maskCanvas.style.width = "100%";
 
             this.maskRGBA = document.createElement("img");
@@ -255,10 +329,59 @@ let better_inpaint_update_all;
             this.appendChild(this.maskL);
             this.maskL.setAttribute("data-type", "L");
             this.maskL.style.display = "none";
+
+            this.maskCanvas.addEventListener("mousedown", event => {
+                this.maskCanvas.active = true;
+            });
+            this.maskCanvas.addEventListener("mouseup", event => {
+                this.maskCanvas.active = false;
+                (async () => {
+                    compute_cropped_images();
+                })();
+            });
+            this.maskCanvas.addEventListener("mousemove", event => {
+                if(!this.maskCanvas.active) return;
+                
+                let color;
+                let compositeOperation;
+                if (event.buttons === 1) {
+                    color = "#FFFFFF";
+                    compositeOperation = "source-over";
+                }
+                else {
+                    color = "#000000";
+                    compositeOperation = "destination-out";
+                }
+                const clientRect = this.maskCanvas.getBoundingClientRect();
+                const position1 = [
+                    (event.clientX - clientRect.left - event.movementX) * this.maskCanvas.width / clientRect.width,
+                    (event.clientY - clientRect.top - event.movementY) * this.maskCanvas.height / clientRect.height,
+                ];
+                const position2 = [
+                    position1[0] + (event.movementX * this.maskCanvas.width / clientRect.width), 
+                    position1[1] + (event.movementY * this.maskCanvas.height / clientRect.height),
+                ];
+                this.draw(position1, position2, color, compositeOperation);
+            });
+            this.maskCanvas.addEventListener("contextmenu", event => {
+                event.preventDefault();
+            });
         }
 
         disconnectedCallback() {
-            this.image_upload_observer.disconnect();
+            
+        }
+
+        draw(position1, position2, color, compositeOperation) {
+            const context = this.maskCanvas.getContext("2d");
+            context.globalCompositeOperation = compositeOperation;
+            context.beginPath();
+            context.lineWidth = 50;
+            context.lineCap = "round";
+            context.strokeStyle = color;
+            context.moveTo(...position1);
+            context.lineTo(...position2);
+            context.stroke();
         }
     }
 
@@ -270,14 +393,36 @@ let better_inpaint_update_all;
         }
 
         connectedCallback() {
+            if(this.selectionRect) return;
+
+            this.selectionShadowContainer = document.createElement("div");
+            this.appendChild(this.selectionShadowContainer);
+            this.selectionShadowContainer.style.position = "absolute";
+            this.selectionShadowContainer.style.overflow = "hidden";
+            this.selectionShadowContainer.style.left = "0%";
+            this.selectionShadowContainer.style.top = "0%";
+            this.selectionShadowContainer.style.width = "100%";
+            this.selectionShadowContainer.style.height = "100%";
+
+            this.selectionShadow = document.createElement("div");
+            this.selectionShadowContainer.appendChild(this.selectionShadow);
+            this.selectionShadow.style.position = "absolute";
+            this.selectionShadow.style.boxShadow = "0 0 0 100vh rgba(0, 0, 0, .7)";
+            this.selectionShadow.style.left = "0%";
+            this.selectionShadow.style.top = "0%";
+            this.selectionShadow.style.width = "100%";
+            this.selectionShadow.style.height = "100%";
+
             this.selectionRect = document.createElement("div");
             this.appendChild(this.selectionRect);
             this.selectionRect.style.position = "absolute";
-            this.selectionRect.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
-            this.selectionRect.style.left = "20%";
-            this.selectionRect.style.top = "20%";
-            this.selectionRect.style.width = "30%";
-            this.selectionRect.style.height = "30%";
+            this.selectionRect.style.border = "2px dashed #ccc";
+            this.selectionRect.style.left = "0%";
+            this.selectionRect.style.top = "0%";
+            this.selectionRect.style.width = "100%";
+            this.selectionRect.style.height = "100%";
+
+            this.updateSelectionShadowStyle();
 
             this.resizeLeft = document.createElement("div");
             this.selectionRect.append(this.resizeLeft);
@@ -432,7 +577,10 @@ let better_inpaint_update_all;
                 this.resizeLowerLeft,
                 this.moveBlock,
             ].forEach(resizeTool => {
+                resizeTool.style.userSelect = "none";
                 resizeTool.addEventListener("mousedown", event => {
+                    if (event.buttons !== 1) return;
+
                     this.selectionRect.previousStyle = JSON.parse(JSON.stringify(this.selectionRect.style));
                     resizeTool.mouseStart = [event.clientX, event.clientY];
                     resizeTool.clientRect = this.getBoundingClientRect();
@@ -444,13 +592,17 @@ let better_inpaint_update_all;
                     resizeTool.style.zIndex = 1;
                 });
                 resizeTool.addEventListener("mousemove", event => {
+                    if (event.buttons !== 1) return;
                     if(!resizeTool.active) return;
+
                     resizeTool.updateFunction(...[
                         100 * (event.clientX - resizeTool.mouseStart[0]) / resizeTool.clientRect.width,
                         100 * (event.clientY - resizeTool.mouseStart[1]) / resizeTool.clientRect.height,
                     ]);
                 });
-                resizeTool.addEventListener("mouseup", () => {
+                resizeTool.addEventListener("mouseup", event => {
+                    if(!resizeTool.active) return;
+
                     resizeTool.active = false;
                     resizeTool.style.left = resizeTool.previousStyle.left;
                     resizeTool.style.top = resizeTool.previousStyle.top;
@@ -460,6 +612,21 @@ let better_inpaint_update_all;
                     (async () => {
                         compute_cropped_images();
                     })();
+                });
+                document.addEventListener("keydown", event => {
+                    if(!resizeTool.active) return;
+                    if(event.key !== "Escape") return;
+
+                    resizeTool.active = false;
+                    resizeTool.style.left = resizeTool.previousStyle.left;
+                    resizeTool.style.top = resizeTool.previousStyle.top;
+                    resizeTool.style.width = resizeTool.previousStyle.width;
+                    resizeTool.style.height = resizeTool.previousStyle.height;
+                    resizeTool.style.zIndex = 0;
+                    this.selectionRect.style.left = this.selectionRect.previousStyle.left;
+                    this.selectionRect.style.top = this.selectionRect.previousStyle.top;
+                    this.selectionRect.style.width = this.selectionRect.previousStyle.width;
+                    this.selectionRect.style.height = this.selectionRect.previousStyle.height;
                 });
             });
         }
@@ -478,6 +645,20 @@ let better_inpaint_update_all;
                 .map(s => parseFloat(s.replace("%", "")) / 100)
                 .map((coord, index) => coord * [this.imageContainer.image.naturalWidth, this.imageContainer.image.naturalHeight][index % 2])
                 .map(coord => Math.round(coord));
+        }
+
+        updateSelectionShadowStyle() {
+            const observer = new MutationObserver(mutationsList => {
+                for(const mutation of mutationsList) {
+                    if(mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                        this.selectionShadow.style.left = this.selectionRect.style.left;
+                        this.selectionShadow.style.top = this.selectionRect.style.top;
+                        this.selectionShadow.style.width = this.selectionRect.style.width;
+                        this.selectionShadow.style.height = this.selectionRect.style.height;
+                    }
+                }
+            });
+            observer.observe(this.selectionRect, { attributes: true, attributeFilter: ['style'] });
         }
     }
 
@@ -503,21 +684,39 @@ let better_inpaint_update_all;
             for(const mutation of mutationsList) {
                 if(mutation.type === "childList") {
                     mutation.addedNodes.forEach(node => {
-                        if(node.tagName === "IMG" && node.alt === ""  && !completed.includes(node)) {
+                        if(
+                            node.tagName === "IMG" && 
+                            node.alt === "" && 
+                            node.nextElementSibling && 
+                            node.nextElementSibling.tagName === "INPUT" && 
+                            !completed.includes(node)
+                        ) {
                             modifiedCallback(node.src);
                             completed.push(node);
                         }
                     });
                     mutation.removedNodes.forEach(node => {
-                        if(node.tagName === "IMG" && node.alt === ""  && !completed.includes(node)) {
+                        if(
+                            node.tagName === "IMG" && 
+                            node.alt === "" && 
+                            !completed.includes(node)
+                        ) {
                             modifiedCallback("");
                             completed.push(node);
                         }
                     });
                 }
-                else if(mutation.type === "attributes" && mutation.attributeName === "src" && mutation.target.tagName === "IMG" && mutation.target.alt === "" && !completed.includes(mutation.target)) {
+                else if(
+                    mutation.type === "attributes" && 
+                    mutation.attributeName === "src" && 
+                    mutation.target.tagName === "IMG" && 
+                    mutation.target.nextElementSibling && 
+                    mutation.target.nextElementSibling.tagName === "INPUT" && 
+                    mutation.target.alt === "" && 
+                    !completed.includes(mutation.target)
+                ) {
                     modifiedCallback(mutation.target.src);
-                    completed.push(node);
+                    completed.push(mutation.target);
                 }
             }
         };

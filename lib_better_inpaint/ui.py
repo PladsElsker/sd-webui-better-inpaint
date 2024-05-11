@@ -7,9 +7,9 @@ class BetterInpaintTab(OperationMode):
     requested_elem_ids = ["img2img_mask_alpha"]
 
     def image_components(self):
-        self.inpaint_img_component = gr.Image(visible=True, label="Cropped image", interactive=False, type="pil", elem_id="img2img_better_inpaint_image")
+        self.inpaint_img_component = gr.Image(label="Cropped image", interactive=False, type="pil", elem_id="img2img_better_inpaint_image")
         self.inpaint_img_component.unrender()
-        self.inpaint_mask_component = gr.Image(visible=True, label="Cropped mask", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask")
+        self.inpaint_mask_component = gr.Image(label="Mask L", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask")
         self.inpaint_mask_component.unrender()
         return self.inpaint_img_component, self.inpaint_mask_component
 
@@ -19,10 +19,13 @@ class BetterInpaintTab(OperationMode):
             with gr.Row():
                 self.inpaint_img_component.render()
                 self.inpaint_mask_component.render()
-                self.inpaint_img_upload = gr.Image(label="Image", source="upload", interactive=True, type="pil", elem_id="img2img_better_inpaint_image_upload")
-                self.inpaint_mask_upload = gr.Image(visible=True, label="Mask", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask_upload")
+                self.inpaint_mask_upload = gr.Image(label="Mask RGBA", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask_upload")
             
-            self.better_inpaint_root = gr.HTML("", elem_id="img2img_better_inpaint_root")
+            with gr.Row():
+                self.inpaint_img_upload = gr.Image(label="Inpaint", source="upload", interactive=True, type="pil", elem_id="img2img_better_inpaint_image_upload", height=800)
+            
+            with gr.Row():
+                self.better_inpaint_root = gr.HTML("", elem_id="img2img_better_inpaint_root")
 
     def section(self, components: list):
         self.mask_alpha = components["img2img_mask_alpha"]
