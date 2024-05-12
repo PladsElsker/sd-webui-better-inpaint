@@ -10,7 +10,7 @@ A better inpainting tab for A1111.
 | Tool selection                                 | ✅          |
 | Explicit rectangular context window            | ✅          |
 | Edit the mask by drawing or erasing            | ✅          |
-| Outpainting                                    | ❌          |
+| Out of the box outpainting                     | ❌          |
 | Undo / redo action manager                     | ❌          |
 
 ## Demo
