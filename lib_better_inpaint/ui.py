@@ -1,6 +1,8 @@
 import gradio as gr
 from sdwi2iextender import OperationMode
 
+from .globals import BetterInpaintGlobals
+
 
 class BetterInpaintTab(OperationMode):
     show_inpaint_params = True
@@ -16,13 +18,15 @@ class BetterInpaintTab(OperationMode):
     def tab(self):
         with gr.TabItem(label='Better inpaint') as self.tab:
             self.update_all = gr.Button(value="", visible=False, elem_id="img2img_better_inpaint_update_all")
+            self.update_context_window = gr.Button(value="", visible=False, elem_id="img2img_better_inpaint_update_context_window")
             with gr.Row():
                 self.inpaint_img_component.render()
                 self.inpaint_mask_component.render()
                 self.inpaint_mask_upload = gr.Image(label="Mask RGBA", interactive=False, type="pil", elem_id="img2img_better_inpaint_mask_upload")
             
             with gr.Row():
-                self.inpaint_img_upload = gr.Image(label="Inpaint", source="upload", interactive=True, type="pil", elem_id="img2img_better_inpaint_image_upload", height=800)
+                self.inpaint_img_upload = BetterInpaintGlobals.image_upload
+                self.inpaint_img_upload.render()
             
             with gr.Row():
                 self.better_inpaint_root = gr.HTML("", elem_id="img2img_better_inpaint_root")
@@ -31,11 +35,15 @@ class BetterInpaintTab(OperationMode):
         self.mask_alpha = components["img2img_mask_alpha"]
         self.inpaint_full_res = components["img2img_inpaint_full_res"]
         self.previous_inpaint_full_res = gr.State(0)
+        self.context_window_json = BetterInpaintGlobals.context_window_json
 
     def gradio_events(self, selected: gr.Checkbox):
         self._update_sliders_visibility(selected)
         self._toggle_only_masked(selected)
         self._update_all_image_components(selected)
+        self._update_context_window_data(selected)
+        self._update_resize_to_slider_dimensions()
+        self._update_script_ui(selected)
 
     def _update_sliders_visibility(self, selected: gr.Checkbox):
         selected.change(
@@ -66,11 +74,30 @@ class BetterInpaintTab(OperationMode):
         self.update_all.click(
             fn=None,
             inputs=[],
-            outputs=[self.inpaint_img_component, self.inpaint_mask_upload],
-            _js="better_inpaint_update_all"
+            outputs=[self.inpaint_img_component, self.inpaint_mask_upload, self.context_window_json],
+            _js="better_inpaint_update_all",
         )
         self.inpaint_mask_upload.change(
             fn=lambda rgb_mask: gr.update(value=None if rgb_mask is None else rgb_mask.convert("L")),
             inputs=[self.inpaint_mask_upload],
             outputs=[self.inpaint_mask_component],
         )
+
+    def _update_context_window_data(self, selected: gr.Checkbox):
+        self.update_context_window.click(
+            fn=None,
+            inputs=[],
+            outputs=[self.context_window_json],
+            _js="better_inpaint_update_context_window",
+        )
+
+    def _update_resize_to_slider_dimensions(self):
+        self.inpaint_img_component.change(fn=lambda: None, _js="updateImg2imgResizeToTextAfterChangingImage", inputs=[], outputs=[], show_progress=False)
+
+    def _update_script_ui(self, selected: gr.Checkbox):
+        selected.change(
+            fn=lambda x: x,
+            inputs=[selected],
+            outputs=[BetterInpaintGlobals.deferred_is_tab_selected],
+        )
+    

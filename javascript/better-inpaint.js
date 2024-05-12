@@ -2,6 +2,7 @@
 // The point is to keep a clean global scope. 
 // Only these functions will be accessible globaly. 
 let better_inpaint_update_all;
+let better_inpaint_update_context_window;
 
 
 (() => {
@@ -116,6 +117,8 @@ let better_inpaint_update_all;
                 if(src === "") this.imageUploadChanged();
             });
 
+            new ResizeObserver(this.viewportScaleChanged.bind(this)).observe(this.viewport);
+
             console.log("[sd-webui-better-inpaint] Root component created");
         }
 
@@ -164,12 +167,14 @@ let better_inpaint_update_all;
             const imageUploadComponent = document.querySelector("#img2img_better_inpaint_image_upload");
             const innerImage = imageUploadComponent.querySelector("div[data-testid='image'] > div > img");
             const annoyingPenButton = imageUploadComponent.querySelector("div[data-testid='image'] > div > div > button");
+
             innerImage.parentElement.insertBefore(this.parentRow, innerImage);
             innerImage.classList.add("better-inpaint-hidden");
             const customButtonTemplate = annoyingPenButton.cloneNode(true);
             annoyingPenButton.classList.add("better-inpaint-hidden");
             this.parentRow.classList.remove("better-inpaint-hidden");
             this.addCustomToolButtons(customButtonTemplate, annoyingPenButton.parentElement);
+            this.viewportScaleChanged();
         }
 
         imageDeleted() {
@@ -192,6 +197,7 @@ let better_inpaint_update_all;
             const SELECTED = "#2c84e8";
             const DESELECTED = "";
             selectionButton.style.borderColor = SELECTED;
+            this.viewport.selection.style.zIndex = 1;
             selectionButton.addEventListener("click", () => {
                 selectionButton.style.borderColor = SELECTED;
                 drawButton.style.borderColor = DESELECTED;
@@ -212,6 +218,21 @@ let better_inpaint_update_all;
             const containerClientRect = this.container.getBoundingClientRect();
 
             selection.style.height = `${100 * ((image.naturalHeight / image.naturalWidth) * containerClientRect.width) / containerClientRect.height}%`;
+        }
+
+        viewportScaleChanged() {
+            const bgImage = this.viewport.image.image;
+            const elementsToPixelate = [this.viewport.mask.maskCanvas, this.viewport.image.image];
+            
+            elementsToPixelate.forEach(element => {
+                const clientRect = element.getBoundingClientRect();
+                if(clientRect.width > bgImage.naturalWidth) {
+                    element.style.imageRendering = "pixelated";
+                }
+                else {
+                    element.style.imageRendering = "";
+                }
+            });
         }
     }
 
@@ -243,6 +264,14 @@ let better_inpaint_update_all;
             this.selection.style.position = "absolute";
             this.selection.style.width = "100%";
             this.selection.style.left = "0%";
+
+            this.frontScreen = document.createElement("div");
+            this.appendChild(this.frontScreen);
+            this.frontScreen.style.position = "absolute";
+            this.frontScreen.style.width = "10000%";
+            this.frontScreen.style.height = "10000%";
+            this.frontScreen.style.left = "-5000%";
+            this.frontScreen.style.top = "-5000%";
         }
 
         disconnectedCallback() {
@@ -257,7 +286,6 @@ let better_inpaint_update_all;
             if(value > 2000) return;
             if(value < 20) return;
 
-            const parentClientRect = this.parentElement.getBoundingClientRect();
             this._scale = value;
             this.style.width = `${value}%`;
             this.style.height = `${value}%`;
@@ -330,40 +358,29 @@ let better_inpaint_update_all;
             this.maskL.setAttribute("data-type", "L");
             this.maskL.style.display = "none";
 
-            this.maskCanvas.addEventListener("mousedown", event => {
+            this.mouseEventLayer = document.createElement("div");
+            this.appendChild(this.mouseEventLayer);
+            this.mouseEventLayer.style.position = "absolute";
+            this.mouseEventLayer.style.width = "10000%";
+            this.mouseEventLayer.style.height = "10000%";
+            this.mouseEventLayer.style.left = "-5000%";
+            this.mouseEventLayer.style.top = "-5000%";
+
+            this.mouseEventLayer.addEventListener("mousedown", event => {
                 this.maskCanvas.active = true;
             });
-            this.maskCanvas.addEventListener("mouseup", event => {
-                this.maskCanvas.active = false;
+            const maskCanvas = this.maskCanvas;
+            function releasePen(event) {
+                maskCanvas.active = false;
                 (async () => {
                     compute_cropped_images();
                 })();
-            });
-            this.maskCanvas.addEventListener("mousemove", event => {
-                if(!this.maskCanvas.active) return;
-                
-                let color;
-                let compositeOperation;
-                if (event.buttons === 1) {
-                    color = "#FFFFFF";
-                    compositeOperation = "source-over";
-                }
-                else {
-                    color = "#000000";
-                    compositeOperation = "destination-out";
-                }
-                const clientRect = this.maskCanvas.getBoundingClientRect();
-                const position1 = [
-                    (event.clientX - clientRect.left - event.movementX) * this.maskCanvas.width / clientRect.width,
-                    (event.clientY - clientRect.top - event.movementY) * this.maskCanvas.height / clientRect.height,
-                ];
-                const position2 = [
-                    position1[0] + (event.movementX * this.maskCanvas.width / clientRect.width), 
-                    position1[1] + (event.movementY * this.maskCanvas.height / clientRect.height),
-                ];
-                this.draw(position1, position2, color, compositeOperation);
-            });
-            this.maskCanvas.addEventListener("contextmenu", event => {
+            }
+            this.mouseEventLayer.addEventListener("mouseup", releasePen);
+            this.mouseEventLayer.addEventListener("mouseleave", releasePen);
+            this.mouseEventLayer.addEventListener("mousemove", this.draw.bind(this));
+            this.mouseEventLayer.addEventListener("mousedown", this.draw.bind(this));
+            this.mouseEventLayer.addEventListener("contextmenu", event => {
                 event.preventDefault();
             });
         }
@@ -372,16 +389,69 @@ let better_inpaint_update_all;
             
         }
 
-        draw(position1, position2, color, compositeOperation) {
-            const context = this.maskCanvas.getContext("2d");
+        draw(event) {
+            if(!this.maskCanvas.active) return;
+                
+            let color;
+            let compositeOperation;
+            if (event.buttons === 1) {
+                color = "#FFFFFF";
+                compositeOperation = "source-over";
+            }
+            else {
+                color = "#000000";
+                compositeOperation = "destination-out";
+            }
+            const clientRect = this.maskCanvas.getBoundingClientRect();
+            const position1 = [
+                (event.clientX - clientRect.left - event.movementX) * this.maskCanvas.width / clientRect.width,
+                (event.clientY - clientRect.top - event.movementY) * this.maskCanvas.height / clientRect.height,
+            ];
+            const position2 = [
+                position1[0] + (event.movementX * this.maskCanvas.width / clientRect.width), 
+                position1[1] + (event.movementY * this.maskCanvas.height / clientRect.height),
+            ];
+            const diameter = 50;
+
+            const context = this.maskCanvas.getContext("2d", { willReadFrequently: true });
+            context.imageSmoothingEnabled = false;
             context.globalCompositeOperation = compositeOperation;
             context.beginPath();
-            context.lineWidth = 50;
+            context.lineWidth = diameter;
             context.lineCap = "round";
             context.strokeStyle = color;
             context.moveTo(...position1);
             context.lineTo(...position2);
             context.stroke();
+
+            const x1 = new Date().getTime() / 1000;
+            this.saturatePixels(context, position1, position2, diameter);
+            const x2 = new Date().getTime() / 1000;
+            console.log(`Time taken: ${x2 - x1}`);
+        }
+
+        saturatePixels(context, position1, position2, diameter) {
+            const [x, y, width, height] = this.getNewlyDrawnBoundingBox(position1, position2, (diameter + 4) / 2);
+            const imageData = context.getImageData(x, y, width, height);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const alpha = data[i + 3];
+                if (alpha > 0) {
+                    data[i] = data[i] > 128 ? 255 : 0;
+                    data[i + 1] = data[i + 1] > 128 ? 255 : 0;
+                    data[i + 2] = data[i + 2] > 128 ? 255 : 0;
+                    data[i + 3] = data[i + 3] > 128 ? 255 : 0;
+                }
+            }
+            context.putImageData(imageData, x, y);
+        }
+
+        getNewlyDrawnBoundingBox(position1, position2, radius) {
+            const x1 = Math.min(position1[0], position2[0]) - radius;
+            const x2 = Math.max(position1[0], position2[0]) + radius;
+            const y1 = Math.min(position1[1], position2[1]) - radius;
+            const y2 = Math.max(position1[1], position2[1]) + radius;
+            return [x1, y1, x2 - x1, y2 - y1];
         }
     }
 
@@ -600,7 +670,7 @@ let better_inpaint_update_all;
                         100 * (event.clientY - resizeTool.mouseStart[1]) / resizeTool.clientRect.height,
                     ]);
                 });
-                resizeTool.addEventListener("mouseup", event => {
+                function releaseSelection(event) {
                     if(!resizeTool.active) return;
 
                     resizeTool.active = false;
@@ -612,7 +682,9 @@ let better_inpaint_update_all;
                     (async () => {
                         compute_cropped_images();
                     })();
-                });
+                }
+                resizeTool.addEventListener("mouseup", releaseSelection);
+                resizeTool.addEventListener("mouseleave", releaseSelection);
                 document.addEventListener("keydown", event => {
                     if(!resizeTool.active) return;
                     if(event.key !== "Escape") return;
@@ -740,6 +812,7 @@ let better_inpaint_update_all;
                 maskL.src = "";
                 croppedImage.src = "";
                 request_update_cropped_image();
+                request_update_context_window();
                 resolve();
                 return;
             }
@@ -752,6 +825,7 @@ let better_inpaint_update_all;
                     crop_image(maskRGBA, maskRGBA, rect),
                 ])
                     .then(request_update_cropped_image)
+                    .then(request_update_context_window)
                     .then(resolve)
                     .catch(reject);
             };
@@ -786,13 +860,27 @@ let better_inpaint_update_all;
 
 
     function _better_inpaint_update_all() {
-        // ouputs: [Cropped image, Cropped mask RGBA, (Resize to tab, Resize to sliders) -> later]
         const image = document.querySelector('better-inpaint-viewport-image > img[data-type="full"]');
         const croppedImage = document.querySelector('better-inpaint-viewport-image > img[data-type="cropped"]');
         const maskRGBA = document.querySelector('better-inpaint-viewport-mask > img[data-type="RGBA"]');
+        const selection = document.querySelector("better-inpaint-selection-rectangle");
 
         if(image.naturalWidth === 0 || image.naturalHeight === 0) return [null, null];
-        return [croppedImage.src, maskRGBA.src];
+        return [croppedImage.src, maskRGBA.src, JSON.stringify(selection.rect)];
     }
     better_inpaint_update_all = _better_inpaint_update_all;
+
+
+    function request_update_context_window() {
+        document.querySelector("#img2img_better_inpaint_update_context_window").click();
+    }
+
+    
+    function _better_inpaint_update_context_window() {
+        const image = document.querySelector('better-inpaint-viewport-image > img[data-type="full"]');
+        const selection = document.querySelector("better-inpaint-selection-rectangle");
+        if(image.naturalWidth === 0 || image.naturalHeight === 0) return '""';
+        return [JSON.stringify(selection.rect)];
+    }
+    better_inpaint_update_context_window = _better_inpaint_update_context_window;
 })();
