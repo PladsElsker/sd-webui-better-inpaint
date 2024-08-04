@@ -101,14 +101,22 @@ let better_inpaint_update_context_window;
 
             this.viewport = new ViewportElement();
             this.container.appendChild(this.viewport);
+            this.viewport.style.position = "absolute";
             this.viewport.style.width = "100%";
             this.viewport.style.height = "100%";
             this.viewport.style.left = "0%";
-            this.viewport.style.position = "absolute";
             new ResizeObserver(this.resizeSelectionRect.bind(this)).observe(this.container);
             
             this.selectionToolSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%" fill="currentColor"><path d="M200-360h480v-320H200v320Zm-40 200q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z"/></svg>`;
             this.drawToolSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 -960 960 960" width="100%" fill="currentColor"><path d="M240-120q-45 0-89-22t-71-58q26 0 53-20.5t27-59.5q0-50 35-85t85-35q50 0 85 35t35 85q0 66-47 113t-113 47Zm0-80q33 0 56.5-23.5T320-280q0-17-11.5-28.5T280-320q-17 0-28.5 11.5T240-280q0 23-5.5 42T220-202q5 2 10 2h10Zm230-160L360-470l358-358q11-11 27.5-11.5T774-828l54 54q12 12 12 28t-12 28L470-360Zm-190 80Z"/></svg>`;
+
+            this.toolSettings = new ToolSettingsElement();
+            this.container.appendChild(this.toolSettings);
+            this.toolSettings.zIndex = 2;
+            this.toolSettings.style.position = "absolute";
+            this.toolSettings.style.width = "100%";
+            this.toolSettings.style.height = "100%";
+            this.toolSettings.style.left = "0%";
 
             this.image_upload_observer = watch_gradio_image("#img2img_better_inpaint_image_upload", src => {
                 const image = this.viewport.image.image;
@@ -161,6 +169,9 @@ let better_inpaint_update_context_window;
             maskCanvas.height = image.naturalHeight;
             this.resizeSelectionRect();
             compute_cropped_images();
+
+            const buttonsContainer = document.querySelector("#img2img_better_inpaint_image_upload > div[data-testid='image'] > div > div > button").parentElement;
+            this.toolSettings.setupWidgetEvents(buttonsContainer);
         }
 
         imageUploaded() {
@@ -191,6 +202,8 @@ let better_inpaint_update_context_window;
             drawButton.querySelector("div").innerHTML = this.drawToolSvg;
             selectionButton.setAttribute("title", "Context window");
             drawButton.setAttribute("title", "Draw");
+            selectionButton.setAttribute("better-inpaint-tool-name", "select-rect");
+            drawButton.setAttribute("better-inpaint-tool-name", "draw-mask");
             buttonsRoot.insertBefore(drawButton, buttonsRoot.children[0]);
             buttonsRoot.insertBefore(selectionButton, buttonsRoot.children[0]);
 
@@ -308,6 +321,45 @@ let better_inpaint_update_context_window;
     }
 
 
+    class ToolSettingsElement extends HTMLElement {
+        constructor() {
+            super();
+        }
+        
+        connectedCallback() {
+            if(this.brushSizeSlider) return;
+
+            this.brushSizeSlider = document.createElement("input");
+            this.appendChild(this.brushSizeSlider);
+            this.brushSizeSlider.setAttribute("id", "better-inpaint-brush-size-slider");
+            this.brushSizeSlider.type = "range";
+            this.brushSizeSlider.min = "0.75";
+            this.brushSizeSlider.max = "200";
+            this.brushSizeSlider.style.position = "absolute";
+            this.brushSizeSlider.style.top = "calc(0% + 40px)";
+            this.brushSizeSlider.style.right = "calc(0% + 5px)";
+            this.brushSizeSlider.style.zIndex = 2;
+            this.brushSizeSlider.style.display = "none";
+        }
+
+        disconnectedCallback() {
+
+        }
+
+        setupWidgetEvents(buttonsContainer) {
+            const rectTool = buttonsContainer.querySelector("button[better-inpaint-tool-name='select-rect']");
+            const brushTool = buttonsContainer.querySelector("button[better-inpaint-tool-name='draw-mask']");
+
+            rectTool.addEventListener("click", _ => {
+                this.brushSizeSlider.style.display = "none";
+            });
+            brushTool.addEventListener("click", _ => {
+                this.brushSizeSlider.style.display = "";
+            });
+        }
+    }
+
+
     class ViewportImageElement extends HTMLElement {
         constructor() {
             super();
@@ -343,6 +395,21 @@ let better_inpaint_update_context_window;
         connectedCallback() {
             if(this.maskCanvas) return;
 
+            this.brushIndicator = document.createElement("div");
+            this.appendChild(this.brushIndicator);
+            this.brushIndicator.style.position = "absolute";
+            this.brushIndicator.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+            this.brushIndicator.style.transform = "translate(-50%, -50%)";
+            this.brushIndicator.style.borderRadius = "50%";
+            this.brushIndicator.setSize = size => {
+                this.brushIndicator.style.width = `${size}px`;
+                this.brushIndicator.style.height = `${size}px`;
+            };
+            this.brushIndicator.setPosition = position => {
+                this.brushIndicator.style.left = `${position[0]}px`;
+                this.brushIndicator.style.top = `${position[1]}px`;
+            };
+
             this.maskCanvas = document.createElement("canvas");
             this.appendChild(this.maskCanvas);
             this.maskCanvas.style.userSelect = "none";
@@ -371,6 +438,8 @@ let better_inpaint_update_context_window;
             });
             const maskCanvas = this.maskCanvas;
             function releasePen(event) {
+                if(maskCanvas.active === false) return;
+
                 maskCanvas.active = false;
                 (async () => {
                     compute_cropped_images();
@@ -383,6 +452,10 @@ let better_inpaint_update_context_window;
             this.mouseEventLayer.addEventListener("contextmenu", event => {
                 event.preventDefault();
             });
+            this.mouseEventLayer.addEventListener("mouseleave", this.hideBrushIndicator.bind(this));
+            this.mouseEventLayer.addEventListener("mouseenter", this.showBrushIndicator.bind(this));
+            this.mouseEventLayer.addEventListener("mousemove", this.drawBrushIndicator.bind(this));
+            this.mouseEventLayer.addEventListener("wheel", event => setTimeout(() => this.drawBrushIndicator(event), 0));
         }
 
         disconnectedCallback() {
@@ -411,7 +484,8 @@ let better_inpaint_update_context_window;
                 position1[0] + (event.movementX * this.maskCanvas.width / clientRect.width), 
                 position1[1] + (event.movementY * this.maskCanvas.height / clientRect.height),
             ];
-            const diameter = 50;
+
+            const diameter = document.querySelector("#better-inpaint-brush-size-slider").value;
 
             const context = this.maskCanvas.getContext("2d", { willReadFrequently: true });
             context.imageSmoothingEnabled = false;
@@ -424,15 +498,12 @@ let better_inpaint_update_context_window;
             context.lineTo(...position2);
             context.stroke();
 
-            const x1 = new Date().getTime() / 1000;
             this.saturatePixels(context, position1, position2, diameter);
-            const x2 = new Date().getTime() / 1000;
-            console.log(`Time taken: ${x2 - x1}`);
         }
 
         saturatePixels(context, position1, position2, diameter) {
             const [x, y, width, height] = this.getNewlyDrawnBoundingBox(position1, position2, (diameter + 4) / 2);
-            const imageData = context.getImageData(x, y, width, height);
+            const imageData = context.getImageData(x, y, width + 4, height + 4);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
                 const alpha = data[i + 3];
@@ -452,6 +523,27 @@ let better_inpaint_update_context_window;
             const y1 = Math.min(position1[1], position2[1]) - radius;
             const y2 = Math.max(position1[1], position2[1]) + radius;
             return [x1, y1, x2 - x1, y2 - y1];
+        }
+
+        hideBrushIndicator() {
+            this.brushIndicator.style.display = "none";
+        }
+
+        showBrushIndicator() {
+            this.brushIndicator.style.display = "";
+        }
+
+        drawBrushIndicator(event) {
+            const diameter = document.querySelector("#better-inpaint-brush-size-slider").value;
+            const canvasRect = this.maskCanvas.getBoundingClientRect();
+            const rescaleFactor = canvasRect.width / this.maskCanvas.width;
+            this.brushIndicator.setSize(diameter * rescaleFactor);
+
+            const cursorPosition = [
+                event.clientX - canvasRect.left,
+                event.clientY - canvasRect.top,
+            ];
+            this.brushIndicator.setPosition(cursorPosition);
         }
     }
 
@@ -737,7 +829,7 @@ let better_inpaint_update_context_window;
 
     customElements.define("better-inpaint", BetterInpaintElement);
     customElements.define("better-inpaint-viewport", ViewportElement);
-    // customElements.define("better-inpaint-tool-buttons", ToolButtonsElement);
+    customElements.define("better-inpaint-tool-settings", ToolSettingsElement);
     customElements.define("better-inpaint-viewport-image", ViewportImageElement);
     customElements.define("better-inpaint-viewport-mask", ViewportMaskElement);
     customElements.define("better-inpaint-selection-rectangle", SelectionRectangleElement);

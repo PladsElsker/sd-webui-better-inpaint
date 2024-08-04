@@ -16,7 +16,7 @@ class BetterInpaintTab(OperationMode):
         return self.inpaint_img_component, self.inpaint_mask_component
 
     def tab(self):
-        with gr.TabItem(label='Better inpaint') as self.tab:
+        with gr.TabItem(label='Better inpaint'):
             self.update_all = gr.Button(value="", visible=False, elem_id="img2img_better_inpaint_update_all")
             self.update_context_window = gr.Button(value="", visible=False, elem_id="img2img_better_inpaint_update_context_window")
             with gr.Row():
