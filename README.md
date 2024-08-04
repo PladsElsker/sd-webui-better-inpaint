@@ -21,6 +21,7 @@ A proper demo will be added here when the extension will be in a more stable sta
 |-----------------------------------------------|---------------|
 | Select context tool                           | Digit1        |
 | Select mask tool                              | Digit2        |
+| Zoom viewport                                 | Wheel         |
 | Draw mask (mask mode)                         | Left click    |
 | Erase mask (mask mode)                        | Right click   |
 | Change brush size                             | Shift + wheel |
