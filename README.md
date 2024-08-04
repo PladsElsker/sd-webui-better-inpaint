@@ -25,7 +25,7 @@ A proper demo will be added here when the extension will be in a more stable sta
 | Erase mask (mask mode)                        | Right click   |
 | Change brush size                             | Shift + wheel |
 | Resize context window (context mode)          | Left click    |
-| Cancel action                                 | Esc           |
+| Cancel action                                 | Escape        |
 
 
 ## Installation
