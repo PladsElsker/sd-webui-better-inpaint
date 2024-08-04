@@ -16,10 +16,17 @@ A better inpainting tab for A1111.
 ## Demo
 A proper demo will be added here when the extension will be in a more stable state. 
 
-## Keyboard shortcuts
-| Action                                        | Shortcut     |
-|-----------------------------------------------|--------------|
-| Cancel action                                 | Esc          |
+## Action keymap
+| Action                                        | Input         |
+|-----------------------------------------------|---------------|
+| Select context tool                           | Digit1        |
+| Select mask tool                              | Digit2        |
+| Draw mask (mask mode)                         | Left click    |
+| Erase mask (mask mode)                        | Right click   |
+| Change brush size                             | Shift + wheel |
+| Resize context window (context mode)          | Left click    |
+| Cancel action                                 | Esc           |
+
 
 ## Installation
 - Go to Extensions > Install from URL

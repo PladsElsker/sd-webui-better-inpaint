@@ -135,6 +135,7 @@ let better_inpaint_update_context_window;
         }
 
         handleWheel(event) {
+            if(this.shiftKeyPressed) return;
             event.preventDefault();
             const scrollAmount = event.deltaY > 0 ? 1 : -1;
             const clientRect = this.container.getBoundingClientRect();
@@ -211,18 +212,85 @@ let better_inpaint_update_context_window;
             const DESELECTED = "";
             selectionButton.style.borderColor = SELECTED;
             this.viewport.selection.style.zIndex = 1;
+            this.drawToolSelected = false;
             selectionButton.addEventListener("click", () => {
+                this.drawToolSelected = false;
                 selectionButton.style.borderColor = SELECTED;
                 drawButton.style.borderColor = DESELECTED;
                 this.viewport.selection.style.zIndex = 1;
                 this.viewport.mask.style.zIndex = 0;
             });
             drawButton.addEventListener("click", () => {
+                this.drawToolSelected = true;
                 selectionButton.style.borderColor = DESELECTED;
                 drawButton.style.borderColor = SELECTED;
                 this.viewport.selection.style.zIndex = 0;
                 this.viewport.mask.style.zIndex = 1;
             });
+
+            this.shiftKeyPressed = false;
+
+            this.addEventListener("mouseenter", _ => {
+                this.listenToKeyStrokes = true;
+            });
+            this.addEventListener("mouseleave", _ => {
+                this.listenToKeyStrokes = false;
+                this.shiftKeyPressed = false;
+            });
+            document.addEventListener("keydown", event => {
+                if(!this.listenToKeyStrokes) return;
+
+                event.preventDefault();
+                const key = event.code;
+                if(key === "Digit1") {
+                    selectionButton.click();
+                }
+                if(key === "Digit2") {
+                    drawButton.click();
+                }
+
+                if(key === "ShiftLeft" || key === "ShiftRight") {
+                    this.shiftKeyPressed = true;
+                }
+
+            });
+            document.addEventListener("keyup", event => {
+                if(!this.listenToKeyStrokes) return;
+                
+                event.preventDefault();
+                const key = event.code;
+                if(key === "ShiftLeft" || key === "ShiftRight") {
+                    this.shiftKeyPressed = false;
+                }
+            });
+            this.container.addEventListener("wheel", event => {
+                if(!this.shiftKeyPressed) return;
+                
+                event.preventDefault();
+
+                const BRUSH_SIZE_INCREMENTS = 10;
+
+                if(event.deltaY < 0) {
+                    const slider = document.querySelector("#better-inpaint-brush-size-slider");
+                    if(parseFloat(slider.value) + BRUSH_SIZE_INCREMENTS < slider.max) {
+                        slider.value = parseFloat(slider.value) + BRUSH_SIZE_INCREMENTS;
+                    }
+                    else {
+                        slider.value = slider.max;
+                    }
+                    document.dispatchEvent(new CustomEvent("betterinpaint-updatebrushindicator"));
+                }
+                else {
+                    const slider = document.querySelector("#better-inpaint-brush-size-slider");
+                    if(parseFloat(slider.value) - BRUSH_SIZE_INCREMENTS > slider.min) {
+                        slider.value = parseFloat(slider.value) - BRUSH_SIZE_INCREMENTS;
+                    }
+                    else {
+                        slider.value = slider.min;
+                    }
+                    document.dispatchEvent(new CustomEvent("betterinpaint-updatebrushindicator"));
+                }
+            }, { passive: false });
         }
 
         resizeSelectionRect() {
@@ -456,6 +524,7 @@ let better_inpaint_update_context_window;
             this.mouseEventLayer.addEventListener("mouseenter", this.showBrushIndicator.bind(this));
             this.mouseEventLayer.addEventListener("mousemove", this.drawBrushIndicator.bind(this));
             this.mouseEventLayer.addEventListener("wheel", event => setTimeout(() => this.drawBrushIndicator(event), 0));
+            document.addEventListener("betterinpaint-updatebrushindicator", this.drawBrushIndicator.bind(this))
         }
 
         disconnectedCallback() {
@@ -485,7 +554,7 @@ let better_inpaint_update_context_window;
                 position1[1] + (event.movementY * this.maskCanvas.height / clientRect.height),
             ];
 
-            const diameter = document.querySelector("#better-inpaint-brush-size-slider").value;
+            const diameter = parseFloat(document.querySelector("#better-inpaint-brush-size-slider").value);
 
             const context = this.maskCanvas.getContext("2d", { willReadFrequently: true });
             context.imageSmoothingEnabled = false;
@@ -502,16 +571,17 @@ let better_inpaint_update_context_window;
         }
 
         saturatePixels(context, position1, position2, diameter) {
+            const QUANTIZATION_THRESHOLD = 80;
             const [x, y, width, height] = this.getNewlyDrawnBoundingBox(position1, position2, (diameter + 4) / 2);
             const imageData = context.getImageData(x, y, width + 4, height + 4);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
                 const alpha = data[i + 3];
                 if (alpha > 0) {
-                    data[i] = data[i] > 128 ? 255 : 0;
-                    data[i + 1] = data[i + 1] > 128 ? 255 : 0;
-                    data[i + 2] = data[i + 2] > 128 ? 255 : 0;
-                    data[i + 3] = data[i + 3] > 128 ? 255 : 0;
+                    data[i + 0] = data[i + 0] > QUANTIZATION_THRESHOLD ? 255 : 0;
+                    data[i + 1] = data[i + 1] > QUANTIZATION_THRESHOLD ? 255 : 0;
+                    data[i + 2] = data[i + 2] > QUANTIZATION_THRESHOLD ? 255 : 0;
+                    data[i + 3] = data[i + 3] > QUANTIZATION_THRESHOLD ? 255 : 0;
                 }
             }
             context.putImageData(imageData, x, y);
@@ -534,7 +604,7 @@ let better_inpaint_update_context_window;
         }
 
         drawBrushIndicator(event) {
-            const diameter = document.querySelector("#better-inpaint-brush-size-slider").value;
+            const diameter = parseFloat(document.querySelector("#better-inpaint-brush-size-slider").value);
             const canvasRect = this.maskCanvas.getBoundingClientRect();
             const rescaleFactor = canvasRect.width / this.maskCanvas.width;
             this.brushIndicator.setSize(diameter * rescaleFactor);
